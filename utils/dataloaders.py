@@ -528,7 +528,7 @@ class LoadImagesAndLabels(Dataset):
         self.batch = bi  # batch index of image
         self.n = n
         self.indices = range(n)
-
+        
         # Update labels
         include_class = []  # filter labels to include only these classes (optional)
         self.segments = list(self.segments)
@@ -722,7 +722,7 @@ class LoadImagesAndLabels(Dataset):
         # Convert
         img = img.transpose((2, 0, 1))[::-1]  # HWC to CHW, BGR to RGB
         img = np.ascontiguousarray(img)
-
+        
         return torch.from_numpy(img), labels_out, self.im_files[index], shapes
 
     def load_image(self, i):
