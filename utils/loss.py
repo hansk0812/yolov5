@@ -251,18 +251,25 @@ class ComputeLoss:
             device=self.device).float() * g  # offsets
         
         for i in range(self.nl): # 3
-            anchors, shape = self.anchors[i], p[i].shape # [2], [80x80x85], [40x40x85], [20x20x85]  
-            gain[2:6] = torch.tensor(shape)[[3, 2, 3, 2]]  # xyxy gain - [1,1,640,640,640,640,1] - [batch_img_id,cls,bbox,anchor_idx]
-
+            anchors, shape = self.anchors[i], p[i].shape # [2], [2x3x80x80x85], [2x3x40x40x85], [2x3x20x20x85]  
+            gain[2:6] = torch.tensor(shape)[[3, 2, 3, 2]]  # xyxy gain - [1,1,80,80,80,80,1] - [batch_img_id,cls,bbox,anchor_idx]
+            
             # Match targets to anchors
             t = targets * gain  # shape(3,n,7)
+            
+            # anchors = [number of grids / anchor width, number of grids / anchor height] 
+            # t  = [number of grids / box width, number of grids / box height] 
+            
             if nt:
                 # Matches
-                #print (t[...,4:6], anchors[:,None], t[...,4:6] / anchors[:,None])
-                #exit()
+                
+                # (3xnx2) / (3x1x2) = (3xnx2) 
                 r = t[..., 4:6] / anchors[:, None]  # wh ratio t[...,[4,5]] == width, height
+                
+                # anchor_t = (640/80) -> 8 // 2 = 4
                 j = torch.max(r, 1 / r).max(2)[0] < self.hyp['anchor_t']  # compare (3 x nboxes x 2) - max(3 x nboxes) < (anchor_t=4)
                 # j = wh_iou(anchors, t[:, 4:6]) > model.hyp['iou_t']  # iou(3,n)=wh_iou(anchors(3,2), gwh(n,2))
+
                 t = t[j]  # filter
                 
                 # 7 to 5 outputs

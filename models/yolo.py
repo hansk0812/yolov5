@@ -201,25 +201,15 @@ class DetectionModel(BaseModel):
             # stride = [256/32, 256/16, 256/8] = [8, 16, 32]
             m.stride = torch.tensor([s / x.shape[-2] for x in forward(torch.zeros(1, ch, s, s))])  # forward
             check_anchor_order(m)
+            
+            # anchors = number of grids / anchor width 
             m.anchors /= m.stride.view(-1, 1, 1)
-            """
-            tensor([[[ 1.25000,  1.62500],
-         [ 2.00000,  3.75000],
-         [ 4.12500,  2.87500]],
-
-        [[ 1.87500,  3.81250],
-         [ 3.87500,  2.81250],
-         [ 3.68750,  7.43750]],
-
-        [[ 3.62500,  2.81250],
-         [ 4.87500,  6.18750],
-         [11.65625, 10.18750]]])
-            """
 
             self.stride = m.stride
             self._initialize_biases()  # only run once
 
         # Init weights, biases
+        # Random initialization chosen over kaiming_normal
         initialize_weights(self)
         self.info()
         LOGGER.info('')
