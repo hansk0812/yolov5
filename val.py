@@ -141,6 +141,10 @@ def run(
 
         # Load model
         model = DetectMultiBackend(weights, device=device, dnn=dnn, data=data, fp16=half)
+        
+        #from cdal import ComputeCDAL
+        #compute_loss = ComputeCDAL(model)
+
         stride, pt, jit, engine = model.stride, model.pt, model.jit, model.engine
         imgsz = check_img_size(imgsz, s=stride)  # check image size
         half = model.fp16  # FP16 supported on limited backends with CUDA
@@ -336,6 +340,8 @@ def run(
     maps = np.zeros(nc) + map
     for i, c in enumerate(ap_class):
         maps[c] = ap[i]
+
+    print ("\n\n", "."*30, "\n", "\tVAL SET LOSS: ", *(loss.cpu() / len(dataloader)).tolist(), "\n", "."*30, "\n\n")
     return (mp, mr, map50, map, *(loss.cpu() / len(dataloader)).tolist()), maps, t
 
 
