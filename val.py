@@ -142,8 +142,8 @@ def run(
         # Load model
         model = DetectMultiBackend(weights, device=device, dnn=dnn, data=data, fp16=half)
         
-        #from cdal import ComputeCDAL
-        #compute_loss = ComputeCDAL(model)
+        from cdal import ComputeCDAL
+        compute_loss = ComputeCDAL(model)
 
         stride, pt, jit, engine = model.stride, model.pt, model.jit, model.engine
         imgsz = check_img_size(imgsz, s=stride)  # check image size

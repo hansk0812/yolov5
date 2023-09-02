@@ -174,8 +174,9 @@ class DetectionModel(BaseModel):
             with open(cfg, encoding='ascii', errors='ignore') as f:
                 self.yaml = yaml.safe_load(f)  # model dict
 
-        # Define model
+        # Define model - ch=3
         ch = self.yaml['ch'] = self.yaml.get('ch', ch)  # input channels
+
         if nc and nc != self.yaml['nc']:
             LOGGER.info(f"Overriding model.yaml nc={self.yaml['nc']} with nc={nc}")
             self.yaml['nc'] = nc  # override yaml value
@@ -185,16 +186,36 @@ class DetectionModel(BaseModel):
         self.model, self.save = parse_model(deepcopy(self.yaml), ch=[ch])  # model, savelist
         self.names = [str(i) for i in range(self.yaml['nc'])]  # default names
         self.inplace = self.yaml.get('inplace', True)
-
+        # anchors = [[6], [6], [6], [3]] -> [[6], [6], [6]]
+        # [[10, 13, 16, 30, 33, 23], [30, 61, 62, 45, 59, 119], [116, 90, 156, 198, 373, 326]] 
+        
         # Build strides, anchors
         m = self.model[-1]  # Detect()
+        # anchors: [3x6] -> [3x3x2]
         if isinstance(m, (Detect, Segment)):
             s = 256  # 2x min stride
             m.inplace = self.inplace
             forward = lambda x: self.forward(x)[0] if isinstance(m, Segment) else self.forward(x)
+            
+            # forward(zeros(1,3,256,256)) -> (1,3,32,32,85), (1,3,16,16,85), (1,3,8,8,85)
+            # stride = [256/32, 256/16, 256/8] = [8, 16, 32]
             m.stride = torch.tensor([s / x.shape[-2] for x in forward(torch.zeros(1, ch, s, s))])  # forward
             check_anchor_order(m)
             m.anchors /= m.stride.view(-1, 1, 1)
+            """
+            tensor([[[ 1.25000,  1.62500],
+         [ 2.00000,  3.75000],
+         [ 4.12500,  2.87500]],
+
+        [[ 1.87500,  3.81250],
+         [ 3.87500,  2.81250],
+         [ 3.68750,  7.43750]],
+
+        [[ 3.62500,  2.81250],
+         [ 4.87500,  6.18750],
+         [11.65625, 10.18750]]])
+            """
+
             self.stride = m.stride
             self._initialize_biases()  # only run once
 
@@ -251,12 +272,14 @@ class DetectionModel(BaseModel):
         return y
 
     def _initialize_biases(self, cf=None):  # initialize biases into Detect(), cf is class frequency
-        # https://arxiv.org/abs/1708.02002 section 3.3
+        # https://arxiv.org/abs/1708.02002 section 3.3: set bias to -log((1-pi)/pi) for small object with prior pi
         # cf = torch.bincount(torch.tensor(np.concatenate(dataset.labels, 0)[:, 0]).long(), minlength=nc) + 1.
         m = self.model[-1]  # Detect() module
+        
+        # HEURISTIC: #TODO
         for mi, s in zip(m.m, m.stride):  # from
             b = mi.bias.view(m.na, -1)  # conv.bias(255) to (3,85)
-            b.data[:, 4] += math.log(8 / (640 / s) ** 2)  # obj (8 objects per 640 image)
+            b.data[:, 4] += math.log(8 / (640 / s) ** 2)  # obj (8 objects per 640 image) : background class has no gt
             b.data[:, 5:5 + m.nc] += math.log(0.6 / (m.nc - 0.99999)) if cf is None else torch.log(cf / cf.sum())  # cls
             mi.bias = torch.nn.Parameter(b.view(-1), requires_grad=True)
 
@@ -303,7 +326,7 @@ def parse_model(d, ch):  # model_dict, input_channels(3)
     if act:
         Conv.default_act = eval(act)  # redefine default activation, i.e. Conv.default_act = nn.SiLU()
         LOGGER.info(f"{colorstr('activation:')} {act}")  # print
-    na = (len(anchors[0]) // 2) if isinstance(anchors, list) else anchors  # number of anchors
+    na = (len(anchors[0]) // 2) if isinstance(anchors, list) else anchors  # number of anchors 6 -> 3
     no = na * (nc + 5)  # number of outputs = anchors * (classes + 5)
 
     layers, save, c2 = [], [], ch[-1]  # layers, savelist, ch out

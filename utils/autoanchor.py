@@ -18,10 +18,12 @@ PREFIX = colorstr('AutoAnchor: ')
 
 def check_anchor_order(m):
     # Check anchor order against stride order for YOLOv5 Detect() module m, and correct if necessary
-    a = m.anchors.prod(-1).mean(-1).view(-1)  # mean anchor area per output layer
-    da = a[-1] - a[0]  # delta a
-    ds = m.stride[-1] - m.stride[0]  # delta s
-    if da and (da.sign() != ds.sign()):  # same order
+    
+    a = m.anchors.prod(-1).mean(-1).view(-1)  # mean anchor area per output layer # 
+    # a: [3x3x2] (0 -> ~640/2) --> [3] : tensor([  456.33334,  3880.33325, 54308.66797])
+    da = a[-1] - a[0]  # delta a areas positivity check
+    ds = m.stride[-1] - m.stride[0]  # delta s 32 - 8 = 24
+    if da and (da.sign() != ds.sign()):  # same order - increasing without flip
         LOGGER.info(f'{PREFIX}Reversing anchor order')
         m.anchors[:] = m.anchors.flip(0)
 

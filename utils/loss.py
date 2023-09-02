@@ -98,7 +98,7 @@ class ComputeLoss:
         try:
             h = model.hyp  # hyperparameters
         except AttributeError:
-            h = {"cls_pw": 1, "obj_pw": 1, "fl_gamma": 0, "anchor_t": 4.0, "box": 0.05, "obj": 0.7, "cls": 0.3}  
+            h = {"cls_pw": 1, "obj_pw": 1, "fl_gamma": 0, "anchor_t": 4.0}  
             # class pred weight, obj pred weight, focal loss gamma, anchor target max, box loss gain, obj loss gain, cls loss gain 
 
         # Define criteria
@@ -258,8 +258,10 @@ class ComputeLoss:
             t = targets * gain  # shape(3,n,7)
             if nt:
                 # Matches
-                r = t[..., 4:6] / anchors[:, None]  # wh ratio
-                j = torch.max(r, 1 / r).max(2)[0] < self.hyp['anchor_t']  # compare
+                #print (t[...,4:6], anchors[:,None], t[...,4:6] / anchors[:,None])
+                #exit()
+                r = t[..., 4:6] / anchors[:, None]  # wh ratio t[...,[4,5]] == width, height
+                j = torch.max(r, 1 / r).max(2)[0] < self.hyp['anchor_t']  # compare (3 x nboxes x 2) - max(3 x nboxes) < (anchor_t=4)
                 # j = wh_iou(anchors, t[:, 4:6]) > model.hyp['iou_t']  # iou(3,n)=wh_iou(anchors(3,2), gwh(n,2))
                 t = t[j]  # filter
                 

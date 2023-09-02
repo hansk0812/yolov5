@@ -7,10 +7,6 @@ class ComputeCDAL(ComputeLoss):
 
     def __call__(self, p, targets):  # predictions, targets - bounding boxes 
 
-        lcls = torch.zeros(1, device=self.device)  # class loss
-        lbox = torch.zeros(1, device=self.device)  # box loss 
-        lobj = torch.zeros(1, device=self.device)  # object loss
-
         tcls, tbox, indices, anchors = self.build_targets(p, targets)  # targets
         # grid boxes based on anchor offsets
         # indices - [image_id, anchor_id, grid_id (y,x)] * 3
@@ -61,7 +57,7 @@ class ComputeCDAL(ComputeLoss):
                 pwh = (pwh.sigmoid() * 2) ** 2 * anchors[i]
                 pbox = torch.cat((pxy, pwh), 1)  # predicted box nboxes * 4
                 iou = bbox_iou(pbox, tbox[i], CIoU=True).squeeze()  # iou(prediction, target) grids nboxes*4,[nboxes * 4]
-                lbox += (1.0 - iou).mean()  # iou loss
+                """lbox += (1.0 - iou).mean()  # iou loss"""
 
                 # Objectness
                 iou = iou.detach().clamp(0).type(tobj.dtype)
@@ -80,33 +76,32 @@ class ComputeCDAL(ComputeLoss):
                     # BCE(linear interpolation weights)
                     t = torch.full_like(pcls, self.cn, device=self.device)  # cn = alpha; targets
                     t[range(n), tcls[i]] = self.cp # cp = 1 - alpha
-                    lcls += self.BCEcls(pcls, t)  # BCE 
-
-                # Append targets to text file
-                # with open('targets.txt', 'a') as file:
-                #     [file.write('%11.5g ' * 4 % tuple(x) + '\n') for x in torch.cat((txy[i], twh[i]), 1)]
-
-            obji = self.BCEobj(pi[..., 4], tobj) # BCE(predicted class confidence, bbox iou) 
+                    """lcls += self.BCEcls(pcls, t)  # BCE""" 
+            
+            """obji = self.BCEobj(pi[..., 4], tobj) # BCE(predicted class confidence, bbox iou) 
             lobj += obji * self.balance[i]  # obj loss
             if self.autobalance:
             # autobalance across anchors
                 self.balance[i] = self.balance[i] * 0.9999 + 0.0001 / obji.detach().item()
 
+                # Append targets to text file
+                # with open('targets.txt', 'a') as file:
+                #     [file.write('%11.5g ' * 4 % tuple(x) + '\n') for x in torch.cat((txy[i], twh[i]), 1)]
+
+
         if self.autobalance:
         # autobalance across batches
-            self.balance = [x / self.balance[self.ssi] for x in self.balance]
-        lbox *= self.hyp['box']
-        lobj *= self.hyp['obj']
-        lcls *= self.hyp['cls']
-        bs = tobj.shape[0]  # batch size
-
-        return (lbox + lobj + lcls) * bs, torch.cat((lbox, lobj, lcls)).detach()
+            self.balance = [x / self.balance[self.ssi] for x in self.balance]"""
+        
+        # cls loss, box loss, obj loss
+        return None, torch.zeros(3, device=self.device)
 
     def build_targets(self, p, targets):
         # Build targets for compute_loss(), input targets(image,class,x,y,w,h)
         """
         print ([x.shape for x in p], targets.shape)
         # [torch.Size([2, 3, 80, 80, 85]), torch.Size([2, 3, 40, 40, 85]), torch.Size([2, 3, 20, 20, 85])] torch.Size([22, 6])
+        # targets - [image_id, cls, bbox]
         """
 
         na, nt = self.na, targets.shape[0]  # number of anchors - 3, targets - 19x6
@@ -115,6 +110,7 @@ class ComputeCDAL(ComputeLoss):
         ai = torch.arange(na, device=self.device).float().view(na, 1).repeat(1, nt)  # same as .repeat_interleave(nt) 3x19 [0]*19,[1]*19,[2]*19
         
         targets = torch.cat((targets.repeat(na, 1, 1), ai[..., None]), 2)  # append anchor indices 3x19x7
+        # [image_id, class, bbox, anchor_id]
 
         g = 0.5  # bias
         off = torch.tensor(
@@ -127,17 +123,19 @@ class ComputeCDAL(ComputeLoss):
                 # [1, 1], [1, -1], [-1, 1], [-1, -1],  # jk,jm,lk,lm
             ],
             device=self.device).float() * g  # offsets
-        
+       
         for i in range(self.nl): # 3
             anchors, shape = self.anchors[i], p[i].shape # [2], [80x80x85], [40x40x85], [20x20x85]  
             gain[2:6] = torch.tensor(shape)[[3, 2, 3, 2]]  # xyxy gain - [1,1,640,640,640,640,1] - [batch_img_id,cls,bbox,anchor_idx]
 
             # Match targets to anchors
-            t = targets * gain  # shape(3,n,7)
-            if nt:
+            t = targets * gain  # shape(3,n,7) [image_id, class, bbox, anchor_id]
+            if nt: # gt bbox count > 0
                 # Matches
-                r = t[..., 4:6] / anchors[:, None]  # wh ratio
-                j = torch.max(r, 1 / r).max(2)[0] < self.hyp['anchor_t']  # compare
+                #print (t[...,4:6], anchors[:,None], t[...,4:6] / anchors[:,None])
+                #exit()
+                r = t[..., 4:6] / anchors[:, None]  # wh ratio t[...,[4,5]] == width, height
+                j = torch.max(r, 1 / r).max(2)[0] < self.hyp['anchor_t']  # compare (3 x nboxes x 2) - max(3 x nboxes) < (anchor_t=4)
                 # j = wh_iou(anchors, t[:, 4:6]) > model.hyp['iou_t']  # iou(3,n)=wh_iou(anchors(3,2), gwh(n,2))
                 t = t[j]  # filter
                 
