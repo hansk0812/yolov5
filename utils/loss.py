@@ -274,21 +274,24 @@ class ComputeLoss:
                 
                 # 7 to 5 outputs
                 # Offsets
-                gxy = t[:, 2:4]  # grid xy
-                gxi = gain[[2, 3]] - gxy  # inverse
-                j, k = ((gxy % 1 < g) & (gxy > 1)).T
-                l, m = ((gxi % 1 < g) & (gxi > 1)).T
-                j = torch.stack((torch.ones_like(j), j, k, l, m))
-                t = t.repeat((5, 1, 1))[j]
+                gxy = t[:, 2:4]  # grid xy 
+                gxi = gain[[2, 3]] - gxy  # inverse (1-x)(1-y) for xy
+                
+                j, k = ((gxy % 1 < g) & (gxy > 1)).T # g=0.5 ; % removes numbers before decimal pt
+                l, m = ((gxi % 1 < g) & (gxi > 1)).T # grid x,y coords (0-80) 
+                # grid coords that cover more than one grid but less than k for all integers k
+                # Negative aspect ratios have positive expression in l and m
+                j = torch.stack((torch.ones_like(j), j, k, l, m)) # 5 x nboxes
+                t = t.repeat((5, 1, 1))[j] # t[0] - all grids/wh t[1:3] - xy; t[4:6] - 1-xy
                 offsets = (torch.zeros_like(gxy)[None] + off[:, None])[j]
             else:
                 t = targets[0]
                 offsets = 0
 
             # Define
-            bc, gxy, gwh, a = t.chunk(4, 1)  # (image, class), grid xy, grid wh, anchors
+            bc, gxy, gwh, a = t.chunk(4, 1)  # (image, class) - 129x2, grid xy 129x2, grid wh - 129x2, anchors - 129x1
             a, (b, c) = a.long().view(-1), bc.long().T  # anchors, image, class
-            gij = (gxy - offsets).long()
+            gij = (gxy - offsets).long() # xy coords - 0.5
             gi, gj = gij.T  # grid indices
 
             # Append
