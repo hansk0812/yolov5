@@ -941,6 +941,7 @@ def non_max_suppression(
 
         # Compute conf
         x[:, 5:] *= x[:, 4:5]  # conf = obj_conf * cls_conf
+        class_logits = x[:,5:]
 
         # Box/Mask
         box = xywh2xyxy(x[:, :4])  # center_x, center_y, width, height) to (x1, y1, x2, y2)
@@ -989,7 +990,7 @@ def non_max_suppression(
             LOGGER.warning(f'WARNING ⚠️ NMS time limit {time_limit:.3f}s exceeded')
             break  # time limit exceeded
 
-    return output
+    return output, class_logits
 
 
 def strip_optimizer(f='best.pt', s=''):  # from utils.general import *; strip_optimizer()

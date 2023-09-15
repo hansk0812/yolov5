@@ -35,6 +35,8 @@ import numpy as np
 import torch
 from tqdm import tqdm
 
+import torch
+
 FILE = Path(__file__).resolve()
 ROOT = FILE.parents[0]  # YOLOv5 root directory
 if str(ROOT) not in sys.path:
@@ -163,7 +165,7 @@ def plot_images(images, targets, paths=None, fname='images.jpg', names=None):
                     annotator.box_label(box, label, color=color)
     annotator.im.save(fname)  # save
 
-def calculate_cdal_metric(img, gt, pred, nms=False):
+def calculate_cdal_metric(img, gt, pred, nms=False, pred_class_logits=None):
     
     if not nms:
         pred = pred[0] # ignore loss_out term
@@ -171,7 +173,10 @@ def calculate_cdal_metric(img, gt, pred, nms=False):
         
     if nms:
         pred_out = output_to_target(pred)
-        print (pred_out.shape); exit()
+        xc = np.array([x[4] > 0.6 for x in pred_out]) # candidates
+        for xi, x in enumerate(pred_out):
+            pred_out[xi] = x[xc[xi]]  # confidence
+        # [10,7]
     else:
         xc = pred[..., 4] > 0.6  # candidates
         
@@ -201,8 +206,11 @@ def calculate_cdal_metric(img, gt, pred, nms=False):
             ti = pred_out[batch_idx]
         boxes = xywh2xyxy(ti[:, 2:6]).T 
         
-        pred_class_probs = ti[:,5:] * ti[:,4:5]
-        
+        if ti.shape[1] != 7:
+            pred_class_probs = ti[:,5:] * ti[:,4:5]
+        else:
+            pred_class_probs = ti
+
         for box_id in range(boxes.shape[1]):
             cv2.rectangle(image, (int(boxes[0][box_id]), int(boxes[1][box_id])), (int(boxes[2][box_id]), int(boxes[3][box_id])), 255, 1)
         cv2.imwrite('sample_p.jpg', image)
@@ -214,16 +222,34 @@ def calculate_cdal_metric(img, gt, pred, nms=False):
         gt_logits = [x.cpu().numpy() for x in gt if x[0] == batch_idx] 
         bboxes = np.array(gt_logits)
         gt_class_probs = bboxes[:,1:2]
+        gt_class_probs = np.eye(80)[gt_class_probs[:,0].astype(int)]
+
+        #gt_class_probs[np.arange(gt_class_probs.shape[0]), gt_class_probs[:,0].astype(int)] = 1
         bboxes = xywh2xyxy(bboxes[:, 2:6])
         
-        print ('pred', pred_class_probs.shape, 'gt', gt_class_probs.shape)
+        if not pred_class_logits is None:
+            pred_class_probs = pred_class_logits
+        
+        print ('pred', pred_class_probs.shape, 'gt', gt_class_probs)
 
         for box_id in range(len(bboxes)):
             cv2.rectangle(image, (int(bboxes[box_id][0]), int(bboxes[box_id][1])), (int(bboxes[box_id][2]), int(bboxes[box_id][3])), 255, 2)
         cv2.imwrite('sample_g.jpg', image)
         print ('sample_g')
-        
+       
+        cdal_metric(image, gt_class_probs, pred_class_probs)
+
 def cdal_metric(x, y, p):
+    
+    if not isinstance(p, np.ndarray):
+        p = p.cpu().numpy()
+    
+    print (p.shape)
+    shannon_entropy = - np.sum(p * np.log(p), axis=0)
+
+    cdal_metric = np.sum(shannon_entropy * p, axis=1) / np.sum(shannon_entropy)
+    
+    print (cdal_metric, cdal_metric.shape)
     pass
     #w = - np.sum(y[:,
 
@@ -368,7 +394,7 @@ def run(
             print ('before nms', preds[0].shape)
             print (calculate_cdal_metric(img_cache, targets, preds)); 
             
-            preds = non_max_suppression(preds,
+            preds, pred_class_logits = non_max_suppression(preds,
                                         conf_thres,
                                         iou_thres,
                                         labels=lb,
@@ -376,7 +402,7 @@ def run(
                                         agnostic=single_cls,
                                         max_det=max_det)
             print ('after nms', [x.shape for x in preds])
-            print (calculate_cdal_metric(img_cache, targets, preds, nms=True)); exit()
+            print (calculate_cdal_metric(img_cache, targets, preds, nms=True, pred_class_logits=pred_class_logits)); 
             exit()
             # preds - [[300,6], [192,6]]
         # Metrics
