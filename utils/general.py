@@ -885,6 +885,7 @@ def non_max_suppression(
     assert 0 <= iou_thres <= 1, f'Invalid IoU {iou_thres}, valid values are between 0.0 and 1.0'
     if isinstance(prediction, (list, tuple)):  # YOLOv5 model in validation model, output = (inference_out, loss_out)
         prediction = prediction[0]  # select only inference output
+    # prediction - [bs, 7k, 85]
 
     device = prediction.device
     mps = 'mps' in device.type  # Apple MPS
@@ -893,6 +894,8 @@ def non_max_suppression(
     bs = prediction.shape[0]  # batch size
     nc = prediction.shape[2] - nm - 5  # number of classes
     xc = prediction[..., 4] > conf_thres  # candidates
+    
+    # bs = 2, nc = 80, xc = batch_size bool
 
     # Settings
     # min_wh = 2  # (pixels) minimum box width and height
@@ -906,10 +909,22 @@ def non_max_suppression(
     t = time.time()
     mi = 5 + nc  # mask start index
     output = [torch.zeros((0, 6 + nm), device=prediction.device)] * bs
+    
+    # x - [batch idx, 699, 85]
     for xi, x in enumerate(prediction):  # image index, image inference
         # Apply constraints
         # x[((x[..., 2:4] < min_wh) | (x[..., 2:4] > max_wh)).any(1), 4] = 0  # width-height
         x = x[xc[xi]]  # confidence
+        
+        """
+        box torch.Size([699, 4]) min: 6.79590 max: 598.10455
+        conf torch.Size([699]) min: 0.00100 max: 0.75668
+        cls softmax torch.Size([699, 80]) min: 4.94258e-09 max: 0.95179
+
+        print ('box', x[:,:4], x[:,:4].min(), x[:,:4].max())
+        print ('conf', x[:,4].shape, x[:,4].min(), x[:,4].max())
+        print ('cls softmax', x[:,5:].shape, x[:,5:].min(), x[:,5:].max()); exit()
+        """
 
         # Cat apriori labels if autolabelling
         if labels and len(labels[xi]):
@@ -956,6 +971,7 @@ def non_max_suppression(
         # Batched NMS
         c = x[:, 5:6] * (0 if agnostic else max_wh)  # classes
         boxes, scores = x[:, :4] + c, x[:, 4]  # boxes (offset by class), scores
+        print ('torchvision nms doc', boxes.shape, scores.shape, iou_thres)
         i = torchvision.ops.nms(boxes, scores, iou_thres)  # NMS
         i = i[:max_det]  # limit detections
         if merge and (1 < n < 3E3):  # Merge NMS (boxes merged using weighted mean)

@@ -132,10 +132,14 @@ class ComputeLoss:
         lcls = torch.zeros(1, device=self.device)  # class loss
         lbox = torch.zeros(1, device=self.device)  # box loss 
         lobj = torch.zeros(1, device=self.device)  # object loss
+        
 
         tcls, tbox, indices, anchors = self.build_targets(p, targets)  # targets
+        # tcls: target class idx
+        # tbox: target box anchors
+        # indices: image_id, anchor_id, grid_xy, grid_wh [image_id, anchor_id, grid_id (y,x)] * 3
+        # anchors: anchor w,h 
         # grid boxes based on anchor offsets
-        # indices - [image_id, anchor_id, grid_id (y,x)] * 3
 
         """
         print ([x.shape for x in p], targets.shape)
@@ -202,6 +206,8 @@ class ComputeLoss:
                     # BCE(linear interpolation weights)
                     t = torch.full_like(pcls, self.cn, device=self.device)  # cn = alpha; targets
                     t[range(n), tcls[i]] = self.cp # cp = 1 - alpha
+                    
+                    # pcls: (-10, 10), t: 0 everywhere, self.cp where right class
                     lcls += self.BCEcls(pcls, t)  # BCE 
 
                 # Append targets to text file
