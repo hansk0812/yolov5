@@ -167,7 +167,7 @@ def plot_images(images, targets, paths=None, fname='images.jpg', names=None):
                     annotator.box_label(box, label, color=color)
     annotator.im.save(fname)  # save
 
-def calculate_cdal_metric(img, gt, pred, nms=False, pred_class_logits=None):
+def calculate_cdal_metric(img, gt, pred, fname, nms=False, pred_class_logits=None):
     
     if not nms:
         pred = pred[0] # ignore loss_out term
@@ -219,7 +219,7 @@ def calculate_cdal_metric(img, gt, pred, nms=False, pred_class_logits=None):
 
         for box_id in range(boxes.shape[1]):
             cv2.rectangle(image, (int(boxes[0][box_id]), int(boxes[1][box_id])), (int(boxes[2][box_id]), int(boxes[3][box_id])), 255, 1)
-        cv2.imwrite('sample_p.jpg', image)
+        #cv2.imwrite('sample_p.jpg', image)
 
         image = img[batch_idx].cpu().numpy().transpose((1,2,0))
         image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
@@ -233,18 +233,20 @@ def calculate_cdal_metric(img, gt, pred, nms=False, pred_class_logits=None):
         bboxes = xywh2xyxy(bboxes[:, 2:6])
         
         if not pred_class_logits is None:
+            print (len(pred_class_logits), batch_idx)
             pred_class_probs = pred_class_logits[batch_idx]
         
         for box_id in range(len(bboxes)):
             cv2.rectangle(image, (int(bboxes[box_id][0]), int(bboxes[box_id][1])), (int(bboxes[box_id][2]), int(bboxes[box_id][3])), 255, 2)
-        cv2.imwrite('sample_g.jpg', image)
+        #cv2.imwrite('sample_g.jpg', image)
        
-        #print ('pred', pred_class_probs.shape, 'gt', gt_class_probs)
-        
+       # Display CDAL matrix before and after NMS
         if not nms:
-            print ("CDAL for image %d" % batch_idx, cdal_metric(torch.tensor(pred_class_probs), fname="before_nms_%d" % batch_idx))
+            print ("CDAL for image %d" % batch_idx, cdal_metric(
+                torch.tensor(pred_class_probs), fname="CDAL_before_nms_b%s_i%d" % (fname, batch_idx)))
         else:
-            print ("CDAL for image %d" % batch_idx, cdal_metric(torch.tensor(pred_class_probs), fname="after_nms_%d" % batch_idx))
+            print ("CDAL for image %d" % batch_idx, cdal_metric(
+                torch.tensor(pred_class_probs), fname="CDAL_after_nms_b%s_i%d" % (fname, batch_idx)))
 
 def cdal_heatmap(np_matrix, fname):
     
@@ -283,7 +285,7 @@ def cdal_metric(features, fname=None):
     heatmap = fc_final_softmax.cpu().numpy() #.transpose((1,2,0))
     cdal_heatmap(heatmap, fname + ".jpg")
 
-    return fc_final_softmax
+    return fc_final_softmax.cpu().numpy()
 
 @smart_inference_mode()
 def run(
@@ -403,7 +405,8 @@ def run(
         
         #print (im.shape)
         # 3x192x672
-        cv2.imwrite('data.jpg',(im*255).cpu().numpy().astype(np.uint8) )
+        
+        #cv2.imwrite('data.jpg',(im*255).cpu().numpy().astype(np.uint8) )
 
         # Inference
         with dt[1]:
@@ -423,7 +426,7 @@ def run(
             torch.Size([2, 7938, 85]) 
             [torch.Size([2, 3, 24, 84, 85]), torch.Size([2, 3, 12, 42, 85]), torch.Size([2, 3, 6, 21, 85])]
             """
-            print (calculate_cdal_metric(img_cache, targets, preds))
+            calculate_cdal_metric(img_cache, targets, preds, fname=str(batch_i))
             
             preds, pred_class_logits = non_max_suppression(preds,
                                         conf_thres,
@@ -432,7 +435,7 @@ def run(
                                         multi_label=True,
                                         agnostic=single_cls,
                                         max_det=max_det)
-            print (calculate_cdal_metric(img_cache, targets, preds, nms=True, pred_class_logits=pred_class_logits)); 
+            calculate_cdal_metric(img_cache, targets, preds, fname=str(batch_i), nms=True, pred_class_logits=pred_class_logits) 
             # preds - [[300,6], [192,6]]
         # Metrics
         for si, pred in enumerate(preds):
