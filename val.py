@@ -19,6 +19,8 @@ Usage - formats:
                               yolov5s_paddle_model       # PaddlePaddle
 """
 
+from torch.distributions import Categorical
+
 import cv2
 from utils import threaded
 from utils.plots import colors
@@ -181,26 +183,30 @@ def calculate_cdal_metric(img, gt, pred, nms=False, pred_class_logits=None):
         xc = pred[..., 4] > 0.6  # candidates
         
         # 7k -> 180
-        pred_out = pred[xc]  # confidence
+        pred_out = [pred[idx][xc[idx]] for idx in range(xc.shape[0])] 
+        #pred_out = pred[xc]  # confidence
         
-        output = [torch.zeros(pred_out.shape, device=pred.device)] * img.shape[0]
+        pred_out_shapes = [x.shape[0] for x in pred_out] 
+        max_idx = np.argmax(pred_out_shapes)
+        output = [torch.zeros(pred_out[idx].shape, device=pred.device) for idx in range(xc.shape[0])]
         
         for idx in range(len(output)):
-            output[idx][...,2:6] = pred_out[:,:4]
-            output[idx][:,1] = pred_out[:,4]
-            output[idx][:,0] = pred_out[:,5]
-            output[idx][:,6:] = pred_out[:,6:]
+            output[idx][...,2:6] = pred_out[idx][:,:4]
+            output[idx][:,1] = pred_out[idx][:,4]
+            #output[idx][:,0] = pred_out[idx][:,5]
+            output[idx][:,5:] = pred_out[idx][:,5:]
 
         #pred_out = np.zeros((pred.shape[1], 7))
         #pred_out[:,2:6] = pred[batch_idx][:,:4].cpu().numpy()
         #pred_out[:,6] = pred[batch_idx][:,5].cpu().numpy()
         #print ('before nms case pred', pred_out.shape, pred_out.min(), pred_out.max())
-        pred_out = np.array([x.cpu().numpy() for x in output])
+        pred_out = [x.cpu().numpy() for x in output]
 
     for batch_idx in range(img.shape[0]):
         image = img[batch_idx].cpu().numpy().transpose((1,2,0))
         image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-        if pred_out.shape[-1] == 7:
+        
+        if not isinstance(pred_out, list): #pred_out.shape[-1] == 7:
             ti = pred_out[pred_out[:,0] == batch_idx]  # image targets
         else:
             ti = pred_out[batch_idx]
@@ -214,7 +220,6 @@ def calculate_cdal_metric(img, gt, pred, nms=False, pred_class_logits=None):
         for box_id in range(boxes.shape[1]):
             cv2.rectangle(image, (int(boxes[0][box_id]), int(boxes[1][box_id])), (int(boxes[2][box_id]), int(boxes[3][box_id])), 255, 1)
         cv2.imwrite('sample_p.jpg', image)
-        print ('sample_p')
 
         image = img[batch_idx].cpu().numpy().transpose((1,2,0))
         image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
@@ -228,30 +233,57 @@ def calculate_cdal_metric(img, gt, pred, nms=False, pred_class_logits=None):
         bboxes = xywh2xyxy(bboxes[:, 2:6])
         
         if not pred_class_logits is None:
-            pred_class_probs = pred_class_logits
+            pred_class_probs = pred_class_logits[batch_idx]
         
-        print ('pred', pred_class_probs.shape, 'gt', gt_class_probs)
-
         for box_id in range(len(bboxes)):
             cv2.rectangle(image, (int(bboxes[box_id][0]), int(bboxes[box_id][1])), (int(bboxes[box_id][2]), int(bboxes[box_id][3])), 255, 2)
         cv2.imwrite('sample_g.jpg', image)
-        print ('sample_g')
        
-        cdal_metric(image, gt_class_probs, pred_class_probs)
+        #print ('pred', pred_class_probs.shape, 'gt', gt_class_probs)
+        
+        if not nms:
+            print ("CDAL for image %d" % batch_idx, cdal_metric(torch.tensor(pred_class_probs), fname="before_nms_%d" % batch_idx))
+        else:
+            print ("CDAL for image %d" % batch_idx, cdal_metric(torch.tensor(pred_class_probs), fname="after_nms_%d" % batch_idx))
 
-def cdal_metric(x, y, p):
+def cdal_heatmap(np_matrix, fname):
     
-    if not isinstance(p, np.ndarray):
-        p = p.cpu().numpy()
+    from matplotlib import pyplot as plt
     
-    print (p.shape)
-    shannon_entropy = - np.sum(p * np.log(p), axis=0)
+    #import seaborn as sns
+    #ax = sns.heatmap(np_matrix, linewidth=0.5)
 
-    cdal_metric = np.sum(shannon_entropy * p, axis=1) / np.sum(shannon_entropy)
+    plt.imshow(np_matrix, cmap='hot', interpolation='nearest')
     
-    print (cdal_metric, cdal_metric.shape)
-    pass
-    #w = - np.sum(y[:,
+    plt.savefig(fname)
+    plt.clf()
+
+def cdal_metric(features, fname=None):
+
+    num_classes = 80
+    
+    f_softmax = torch.softmax(features,dim=1)
+    f_softmax = f_softmax.transpose(1,0)
+    labels_softmax = torch.argmax(f_softmax, dim=0) # size: dim 1
+    weights_softmax = Categorical(probs = f_softmax.T).entropy()
+    weights_softmax = weights_softmax.T
+    fc_final_softmax = torch.tensor([], device=features.device)
+
+    for i in range(num_classes):
+
+        c_softmax = torch.where(labels_softmax == i)[0]
+        fc_softmax = f_softmax[:,c_softmax]
+        wc_softmax = weights_softmax[c_softmax]
+        wc_softmax/=torch.sum(wc_softmax)
+        fc_softmax=torch.matmul(fc_softmax,wc_softmax)
+        fc_final_softmax = torch.cat((fc_final_softmax,fc_softmax))
+    
+    fc_final_softmax = fc_final_softmax.reshape((80,80))
+
+    heatmap = fc_final_softmax.cpu().numpy() #.transpose((1,2,0))
+    cdal_heatmap(heatmap, fname + ".jpg")
+
+    return fc_final_softmax
 
 @smart_inference_mode()
 def run(
@@ -391,8 +423,7 @@ def run(
             torch.Size([2, 7938, 85]) 
             [torch.Size([2, 3, 24, 84, 85]), torch.Size([2, 3, 12, 42, 85]), torch.Size([2, 3, 6, 21, 85])]
             """
-            print ('before nms', preds[0].shape)
-            print (calculate_cdal_metric(img_cache, targets, preds)); 
+            print (calculate_cdal_metric(img_cache, targets, preds))
             
             preds, pred_class_logits = non_max_suppression(preds,
                                         conf_thres,
@@ -401,9 +432,7 @@ def run(
                                         multi_label=True,
                                         agnostic=single_cls,
                                         max_det=max_det)
-            print ('after nms', [x.shape for x in preds])
             print (calculate_cdal_metric(img_cache, targets, preds, nms=True, pred_class_logits=pred_class_logits)); 
-            exit()
             # preds - [[300,6], [192,6]]
         # Metrics
         for si, pred in enumerate(preds):
