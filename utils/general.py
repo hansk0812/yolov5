@@ -939,6 +939,7 @@ def non_max_suppression(
 
         # If none remain process next image
         if not x.shape[0]:
+            class_logits.append(torch.zeros((0,80)))
             continue
 
         # Compute conf

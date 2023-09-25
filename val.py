@@ -226,14 +226,15 @@ def calculate_cdal_metric(img, gt, pred, fname, nms=False, pred_class_logits=Non
         
         gt_logits = [x.cpu().numpy() for x in gt if x[0] == batch_idx] 
         bboxes = np.array(gt_logits)
-        gt_class_probs = bboxes[:,1:2]
-        gt_class_probs = np.eye(80)[gt_class_probs[:,0].astype(int)]
-
-        #gt_class_probs[np.arange(gt_class_probs.shape[0]), gt_class_probs[:,0].astype(int)] = 1
-        bboxes = xywh2xyxy(bboxes[:, 2:6])
+        try:
+            gt_class_probs = bboxes[:,1:2]
+            gt_class_probs = np.eye(80)[gt_class_probs[:,0].astype(int)]
+            #gt_class_probs[np.arange(gt_class_probs.shape[0]), gt_class_probs[:,0].astype(int)] = 1
+            bboxes = xywh2xyxy(bboxes[:, 2:6])
+        except Exception:
+            gt_class_probs = np.zeros((0,80))
         
         if not pred_class_logits is None:
-            print (len(pred_class_logits), batch_idx)
             pred_class_probs = pred_class_logits[batch_idx]
         
         for box_id in range(len(bboxes)):
@@ -242,11 +243,13 @@ def calculate_cdal_metric(img, gt, pred, fname, nms=False, pred_class_logits=Non
        
        # Display CDAL matrix before and after NMS
         if not nms:
-            print ("CDAL for image %d" % batch_idx, cdal_metric(
-                torch.tensor(pred_class_probs), fname="CDAL_before_nms_b%s_i%d" % (fname, batch_idx)))
+            #print ("CDAL for image %d" % batch_idx, 
+            cdal_metric(
+                torch.tensor(pred_class_probs), fname="CDAL_before_nms_b%s_i%d" % (fname, batch_idx))#)
         else:
-            print ("CDAL for image %d" % batch_idx, cdal_metric(
-                torch.tensor(pred_class_probs), fname="CDAL_after_nms_b%s_i%d" % (fname, batch_idx)))
+            #print ("CDAL for image %d" % batch_idx, 
+            cdal_metric(
+                torch.tensor(pred_class_probs), fname="CDAL_after_nms_b%s_i%d" % (fname, batch_idx))#)
 
 def cdal_heatmap(np_matrix, fname):
     
