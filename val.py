@@ -205,7 +205,7 @@ def calculate_cdal_metric(img, gt, pred, fname, nms=False, pred_class_logits=Non
     for batch_idx in range(img.shape[0]):
         image = img[batch_idx].cpu().numpy().transpose((1,2,0))
         
-        cv2.imwrite(image, "CDAL_b%s_i%d_image.jpg" % (fname, batch_idx))
+        cv2.imwrite("CDAL_b%s_i%d_image.jpg" % (fname, batch_idx), image)
         
         image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
@@ -222,7 +222,7 @@ def calculate_cdal_metric(img, gt, pred, fname, nms=False, pred_class_logits=Non
 
         for box_id in range(boxes.shape[1]):
             cv2.rectangle(image, (int(boxes[0][box_id]), int(boxes[1][box_id])), (int(boxes[2][box_id]), int(boxes[3][box_id])), 255, 1)
-        #cv2.imwrite('sample_p.jpg', image)
+        cv2.imwrite("CDAL_b%s_i%d_pred_%s_nms.jpg" % (fname, batch_idx, "before" if not nms else "after"), image)
 
         image = img[batch_idx].cpu().numpy().transpose((1,2,0))
         image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
@@ -240,10 +240,12 @@ def calculate_cdal_metric(img, gt, pred, fname, nms=False, pred_class_logits=Non
         if not pred_class_logits is None:
             pred_class_probs = pred_class_logits[batch_idx]
         
+        """
         for box_id in range(len(bboxes)):
             cv2.rectangle(image, (int(bboxes[box_id][0]), int(bboxes[box_id][1])), (int(bboxes[box_id][2]), int(bboxes[box_id][3])), 255, 2)
-        #cv2.imwrite('sample_g.jpg', image)
-       
+        cv2.imwrite('sample_g.jpg', image)
+        """
+
        # Display CDAL matrix before and after NMS
         if not nms:
             #print ("CDAL for image %d" % batch_idx, 
