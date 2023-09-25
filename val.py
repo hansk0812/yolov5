@@ -204,8 +204,11 @@ def calculate_cdal_metric(img, gt, pred, fname, nms=False, pred_class_logits=Non
 
     for batch_idx in range(img.shape[0]):
         image = img[batch_idx].cpu().numpy().transpose((1,2,0))
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
         
+        cv2.imwrite(image, "CDAL_b%s_i%d_image.jpg" % (fname, batch_idx))
+        
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+
         if not isinstance(pred_out, list): #pred_out.shape[-1] == 7:
             ti = pred_out[pred_out[:,0] == batch_idx]  # image targets
         else:
@@ -245,21 +248,19 @@ def calculate_cdal_metric(img, gt, pred, fname, nms=False, pred_class_logits=Non
         if not nms:
             #print ("CDAL for image %d" % batch_idx, 
             cdal_metric(
-                torch.tensor(pred_class_probs), fname="CDAL_before_nms_b%s_i%d" % (fname, batch_idx))#)
+                torch.tensor(pred_class_probs), fname="CDAL_b%s_i%d_%s_nms" % (fname, batch_idx, "before" if not nms else "after"))#)
         else:
             #print ("CDAL for image %d" % batch_idx, 
             cdal_metric(
-                torch.tensor(pred_class_probs), fname="CDAL_after_nms_b%s_i%d" % (fname, batch_idx))#)
+                torch.tensor(pred_class_probs), fname="CDAL_b%s_i%d_%s_nms" % (fname, batch_idx, "before" if not nms else "after"))#)
 
 def cdal_heatmap(np_matrix, fname):
     
     from matplotlib import pyplot as plt
     
-    #import seaborn as sns
-    #ax = sns.heatmap(np_matrix, linewidth=0.5)
+    import seaborn as sns
+    ax = sns.heatmap(np_matrix)
 
-    plt.imshow(np_matrix, cmap='hot', interpolation='nearest')
-    
     plt.savefig(fname)
     plt.clf()
 
