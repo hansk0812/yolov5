@@ -55,6 +55,7 @@ from utils.metrics import ConfusionMatrix, ap_per_class, box_iou
 from utils.plots import output_to_target, plot_images, plot_val_study
 from utils.torch_utils import select_device, smart_inference_mode
 
+from utils.general import xywh2xyxy
 
 def save_one_txt(predn, save_conf, shape, file):
     # Save one txt result
@@ -188,13 +189,14 @@ def calculate_cdal_metric(img, gt, pred, fname, nms=False, pred_class_logits=Non
         
         pred_out_shapes = [x.shape[0] for x in pred_out] 
         max_idx = np.argmax(pred_out_shapes)
-        output = [torch.zeros(pred_out[idx].shape, device=pred.device) for idx in range(xc.shape[0])]
+        output = [torch.zeros((pred_out[idx].shape[0], pred_out[idx].shape[1]+1), \
+                        device=pred.device) for idx in range(xc.shape[0])]
         
         for idx in range(len(output)):
             output[idx][...,2:6] = pred_out[idx][:,:4]
             output[idx][:,1] = pred_out[idx][:,4]
             #output[idx][:,0] = pred_out[idx][:,5]
-            output[idx][:,5:] = pred_out[idx][:,5:]
+            output[idx][:,6:] = pred_out[idx][:,5:]
 
         #pred_out = np.zeros((pred.shape[1], 7))
         #pred_out[:,2:6] = pred[batch_idx][:,:4].cpu().numpy()
@@ -204,22 +206,29 @@ def calculate_cdal_metric(img, gt, pred, fname, nms=False, pred_class_logits=Non
 
     for batch_idx in range(img.shape[0]):
         image = img[batch_idx].cpu().numpy().transpose((1,2,0))
-        
-        cv2.imwrite("CDAL_b%s_i%d_image.jpg" % (fname, batch_idx), image)
-        
         image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
         if not isinstance(pred_out, list): #pred_out.shape[-1] == 7:
             ti = pred_out[pred_out[:,0] == batch_idx]  # image targets
         else:
             ti = pred_out[batch_idx]
-        boxes = xywh2xyxy(ti[:, 2:6]).T 
         
+        boxes = xywh2xyxy(ti[:, 2:6]).T
+        """
+        boxes = ti[:, 2:6]
+        w, h = np.copy(boxes[:,2]), np.copy(boxes[:,3])
+        boxes[:,2] = boxes[:,0] + w / 2.0
+        boxes[:,3] = boxes[:,1] + w / 2.0
+        boxes[:,0] = boxes[:,0] - w / 2.0
+        boxes[:,1] = boxes[:,1] - h / 2.0
+        boxes = boxes.T
+        """
+
         if ti.shape[1] != 7:
-            pred_class_probs = ti[:,5:] * ti[:,4:5]
+            pred_class_probs = ti[:,6:] * ti[:,1:2]
         else:
             pred_class_probs = ti
-
+        
         for box_id in range(boxes.shape[1]):
             cv2.rectangle(image, (int(boxes[0][box_id]), int(boxes[1][box_id])), (int(boxes[2][box_id]), int(boxes[3][box_id])), 255, 1)
         cv2.imwrite("CDAL_b%s_i%d_pred_%s_nms.jpg" % (fname, batch_idx, "before" if not nms else "after"), image)
@@ -246,28 +255,32 @@ def calculate_cdal_metric(img, gt, pred, fname, nms=False, pred_class_logits=Non
         cv2.imwrite('sample_g.jpg', image)
         """
 
-       # Display CDAL matrix before and after NMS
-        if not nms:
-            #print ("CDAL for image %d" % batch_idx, 
-            cdal_metric(
-                torch.tensor(pred_class_probs), fname="CDAL_b%s_i%d_%s_nms" % (fname, batch_idx, "before" if not nms else "after"))#)
-        else:
-            #print ("CDAL for image %d" % batch_idx, 
-            cdal_metric(
-                torch.tensor(pred_class_probs), fname="CDAL_b%s_i%d_%s_nms" % (fname, batch_idx, "before" if not nms else "after"))#)
+        # Display CDAL matrix before and after NMS
+        cdal_metric(
+            torch.tensor(pred_class_probs), fname="CDAL_b%s_i%d_%s_nms" % (fname, batch_idx, "before" if not nms else "after"))#)
 
-def cdal_heatmap(np_matrix, fname):
+def cdal_heatmap(np_matrix, fname, classes_file="data/coco.yaml"):
     
     from matplotlib import pyplot as plt
+    import yaml
     
+    with open(classes_file, 'r') as fl:
+        # dictionary
+        classes = yaml.safe_load(fl)["names"]
+    
+    class_indices = np.where(np_matrix.sum(axis=1) > 0)[0]
+    class_text = " ; ".join(["%d: %s" % (idx, classes[idx]) for idx in class_indices])
+
     import seaborn as sns
     ax = sns.heatmap(np_matrix)
+    
+    plt.xlabel(class_text, ha="center")
 
     plt.savefig(fname)
     plt.clf()
 
 def cdal_metric(features, fname=None):
-
+    
     num_classes = 80
     
     f_softmax = torch.softmax(features,dim=1)

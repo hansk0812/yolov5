@@ -984,6 +984,7 @@ def non_max_suppression(
             x[i, :4] = torch.mm(weights, x[:, :4]).float() / weights.sum(1, keepdim=True)  # merged boxes
             if redundant:
                 i = i[iou.sum(1) > 1]  # require redundancy
+        class_logits[-1] = class_logits[-1][i]
 
         output[xi] = x[i]
         if mps:
